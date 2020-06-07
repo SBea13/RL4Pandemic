@@ -1,0 +1,7 @@
+1: (Adapted to a case where n. exposed > n. susceptible at the start)
+Quarantine everyone, reconnect infected. 
+Wait until they recover, then reconnect everything.
+
+Has trouble for N larger (possibility of second wave)
+
+2: same behaviour as 1, but more robust (no second wave for larger N)

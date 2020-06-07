@@ -1,0 +1,12 @@
+[DEFAULT]
+InfectionActivationFunction = tanh
+ExposedAverageDuration = 5
+InfectedAverageDuration = 14
+GraphType = PreferentialAttachment
+AsymptomaticMultiplier = .1
+ActivationSpeed = 1
+InitialResources = 10
+ResourceCost = 5
+RunsPerNet = 10
+MaxStepsPerRun = 100
+MaxRemovableConnections = .3

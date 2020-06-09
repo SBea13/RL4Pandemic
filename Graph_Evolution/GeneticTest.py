@@ -5,33 +5,8 @@ import Graph
 
 
 if __name__ == "__main__":
-    # gen = GraphFactory.make_graph("PreferentialAttachment")
-    # g = gen(11, .5, seed=42, nodetype=Genetic.GeneticNode) #Starting graph
-    
-    # #Add some infected
-    # g.getVertex(0).setState(Epidemic.State.INFECTED)
-    
-    # edges = 0
-    # for node in g:
-    #     edges += len(node.getConnections())
-    # edges /= 2 #Undirected graph
-    # print("There are", edges, "edges")
-    
-    # print(g.getVertex(0))
-    # g.plot(1)
-    # input("Press ENTER to continue...")
-    
-    # g.getVertex(0).isolate()
-    
-    # print(g.getVertex(0))
-    # g.plot(1)
-    # input("Press ENTER to continue...")
-    
-    # g.getVertex(0).reconnect()
-    
-    # print(g.getVertex(0))
-    # g.plot(1)
-    
+    #Check the logic of isolate() and reconnect() actions on a simple Graph.
+        
     g = Graph.Graph(node_type=Genetic.GeneticNode)
     
     v0 = g.addVertex(0, [0,0])
@@ -39,17 +14,10 @@ if __name__ == "__main__":
     v2 = g.addVertex(2, [1,0])
     v3 = g.addVertex(3, [-1,0])
     
-    g.addEdge(0, 1, weight=.5)
-    g.addEdge(1, 0, weight = .5)
-    
-    g.addEdge(1, 2, weight=.5)
-    g.addEdge(2, 1, weight=.5)
-    
-    g.addEdge(0, 2, weight=.5)
-    g.addEdge(2, 0, weight=.5)
-    
-    g.addEdge(3, 0, weight=.5)
-    g.addEdge(0, 3, weight=.5)
+    g.addSymmetricEdge(0, 1, weight=.5)
+    g.addSymmetricEdge(1, 2, weight=.5)
+    g.addSymmetricEdge(0, 2, weight=.5)    
+    g.addSymmetricEdge(3, 0, weight=.5)
     
     print(g)
     g.plot(.3)

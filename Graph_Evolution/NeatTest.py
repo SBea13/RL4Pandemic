@@ -3,11 +3,15 @@ import Genetic
 import Epidemic
 import neat
 import numpy as np
-from pyqtgraph.Qt import QtCore, QtGui
 import os
 import multiprocessing
+from pyqtgraph.Qt import QtCore, QtGui
 import pyqtreporter
 
+#Test genetic evolution on a very simple graph
+#As the network starts with only a single infected and no exposed
+#the best choice would be to simply isolate the infected node
+#until it recovers. This is indeed what the algorithm produces.
 
 if __name__ == "__main__":
     g = Graph.Graph(node_type=Genetic.GeneticNode)
@@ -38,16 +42,6 @@ if __name__ == "__main__":
     g.addSymmetricEdge(3, 6, .5)
     
     v2.setState(Epidemic.State.INFECTED)
-    # v0.isolate()
-    
-    # g.plot(.3) #Do not plot before network evolution
-
-    #Edit initial condition
-    #v1.setState(Epidemic.State.EXPOSED)
-    #v2.setState(Epidemic.State.EXPOSED)
-    
-    # g.plot(.3)
-    # input("Test")
     
     #---Neat Config---#    
     local_dir = os.path.dirname(__file__)
@@ -79,22 +73,10 @@ if __name__ == "__main__":
 
     timer = QtCore.QTimer()
     timer.timeout.connect(update)
-    timer.start(1000)
+    timer.start(300)
     
     print('\nBest genome:\n{!s}'.format(winner))
     
     input("Press Enter to continue...")
-    # pyqt.proc.close()
-    
-    # def update():
-    #     for node in g:
-    #         node.step()
-    #         g.plot(.3)
-
-    # timer = QtCore.QTimer()
-    # timer.timeout.connect(update)
-    # timer.start(300)
-    
-    # input("Press ENTER to continue...")
     
     

@@ -1,14 +1,15 @@
 from Graph import Graph
 import Epidemic
-import numpy as np
 import GraphFactory
+
 from pyqtgraph.Qt import QtCore, QtGui
-import neat
 from pyqtreporter import PyQtReporter
-import time
-import os
 from copy import deepcopy
 from scipy.special import softmax
+import numpy as np
+import time
+import os
+import neat
 import configparser
 import multiprocessing
 import gzip
@@ -18,6 +19,7 @@ try:
 except ImportError:
     import pickle # pylint: disable=import-error
 
+#Save/load objects (used to store network parameters)
 def save_object(obj, filename):
     with gzip.open(filename, 'w', compresslevel=5) as f:
         pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -27,43 +29,47 @@ def load_object(filename):
         obj = pickle.load(f)
         return obj
 
+#Retrieve config from parameters file
+local_dir = os.path.dirname(__file__)
 config = configparser.ConfigParser()
-config_rtn = config.read('parameters.txt')
+config_rtn = config.read(os.path.join(local_dir, 'parameters.txt'))
 config = config["DEFAULT"]
 
 class GeneticNode(Epidemic.SEIR_node):
+    """Add actions (isolate / reconnect) to nodes in the graph"""
+    
     def __init__(self, identifier, position, state = Epidemic.State.SUSCEPTIBLE):
         super().__init__(identifier, position, state)
-        self.resources = int(config["InitialResources"])
         
+        #Store "disabled" connections here
         self.old_weight = 0
         self.old_weights = {}
         self.old_connections = {}
         self.old_degree = 0
         
-        self.isolated = False 
+        self.isolated = False #Flag: if True, node is in quarantine (has no connections with other nodes)
     
     def addNeighbour(self, to_id, weight=0):
+        #If node is not isolated, the connection is immediately added. Otherwise, it is stored and added only if a "reconnect" action is taken
         if not self.isolated:
-            #print("I'm adding a connection to", self.id)
             self.connectedTo[to_id] = weight
             self.degree += 1
             self.total_weight += weight
         else:
-            #print("I'm", self.id, "and I'm isolated!")
             self.old_connections[to_id] = weight
             self.old_degree += 1
             self.old_weights[to_id.id] = weight
-            
-    
         
     def isolate(self): 
         """Remove all connections from/to this node"""
+        
+        #Connections are merely "disabled", and are still stored in a separate variable
         self.isolated = True
         
         if self.degree == 0:
             return 0
         
+        #Store connections
         self.old_weight = self.total_weight
         self.old_connections = self.connectedTo #Store old connections
         self.old_degree = self.degree
@@ -71,7 +77,6 @@ class GeneticNode(Epidemic.SEIR_node):
         #Delete all connections to this node
         for nodeTo in self.connectedTo.keys():
             w = nodeTo.removeNeighbour(self)
-            #print(w)
             self.old_weights[nodeTo.id] = w
         
         self.degree = 0
@@ -81,19 +86,19 @@ class GeneticNode(Epidemic.SEIR_node):
         return self.old_weight
     
     def reconnect(self): 
+        """Reconnect the node to the graph"""
+        
+        #All "disabled" connections are enabled
         self.isolated = False
         
         if (self.old_degree != self.degree):
             self.degree = self.old_degree
             self.connectedTo = self.old_connections
-            #print(self.connectedTo)
             self.total_weight = self.old_weight
 
             self.old_degree = 0
             self.old_connections = {}
             self.old_weight = 0
-            
-            #print(self.connectedTo)
             
             isolated_connections = []
             for nodeTo in self.connectedTo.keys():
@@ -106,45 +111,8 @@ class GeneticNode(Epidemic.SEIR_node):
                 self.removeNeighbour(iso)
                 
             self.old_weights = {}
-        
-    def genetic_step(self):
-        self.resources = self.resources - int(config["ResourceCost"]) \
-                         + self.total_weight
-        self.step()
-        
-        return self.resources
     
-    
-    def remove_random_connections(self, p=.1):
-        """Remove edges with probability p""" #TODO To be fixed
-        
-        if (self.degree == 0):
-            return 0
-        
-        removedEdges = np.random.uniform(0, 1, size=self.degree) < p
-        n_removed_connections = sum(removedEdges)
-        
-        keys_to_remove = np.array(list(self.connectedTo.keys()))[removedEdges]
-    
-        original_weight = self.total_weight
-        
-        for key in keys_to_remove:
-            weight = self.connectedTo[key]
-            self.total_weight -= weight
-            
-            key.degree -= 1
-            key.total_weight -= weight #TODO Bugged!
-            del key.connectedTo[self]
-            del self.connectedTo[key]
-        
-        self.degree -= n_removed_connections
-    
-        # print("Removed {} connections, total weight: {} -> {}".format(
-        #     n_removed_connections, original_weight, self.total_weight
-        # ))
-        
-        return original_weight - self.total_weight #Return cost of operation
-    
+    #Compute observations (inputs for RNN)
     def getInfectedWeight(self):
         infected_weight = 0
         for node, w in self.connectedTo.items():
@@ -157,6 +125,8 @@ class GeneticNode(Epidemic.SEIR_node):
         
 
 class Simulation:
+    """Interface with NEAT. Stores the environment (Graph with GeneticNodes) and retrieves all the necessary configuration."""
+    
     def __init__(self, graph):
         self.g = deepcopy(graph) #Store a local copy of the graph
         self.checkpoint = deepcopy(graph)
@@ -180,18 +150,18 @@ class Simulation:
         self.removable_edges = int(removable_fraction * self.num_edges)
         
     def step_sim(self, nets):
-        #---Retrieve observations---#
+        #---Retrieve observations (RNN inputs)---#
         
         #Observations are:
-        #   0: fraction of infected weight #Keep fraction or give absolute number?
-        #   1: personal state (infected or not)
-        #   (2: fraction of remaining connections)
+        #   0: total infected weight (i.e. sum over weights of connected nodes that are INFECTED)
+        #   1: personal state, can be 0 (not INFECTED) or 1 (INFECTED)
+        #   2: fraction of infected nodes in the graph
         
         for i, node in enumerate(self.g):
             if node.degree == 0:
                 self.obs[i,0] = 0
             else:
-                self.obs[i,0] = node.getInfectedWeight() #/ node.getTotalWeight()
+                self.obs[i,0] = node.getInfectedWeight() 
             
             self.obs[i,1] = int(node.state is Epidemic.State.INFECTED)
 
@@ -200,18 +170,12 @@ class Simulation:
         
         #---Compute actions---#
         outputs = np.array([nets[i].activate(self.obs[i]) for i in range(self.N)])
-        action_proba = softmax(outputs, axis=1) #Probability of taking each action
-        
-        n_outputs = action_proba.shape[-1]
-        
-        actions = np.argmax(outputs, axis=1)
-        #actions = [np.random.choice(np.arange(n_outputs, dtype=int), p=action_proba[i])
-        #           for i in range(self.N)]
+        actions = np.argmax(outputs, axis=1) #Highest output is chosen (deterministic, makes training easier for the genetic algorithm)
 
         #---Execute actions---#
         for action, node in zip(actions, self.g):
-            if action == 0:
-                if node.isolated:
+            if action == 0: 
+                if node.isolated: #Call node methods only if necessary
                     pass
                 else:
                     node.isolate()
@@ -220,7 +184,8 @@ class Simulation:
                     node.reconnect()
                 else:
                     pass
-
+        #Note that to keep a node isolated for N timesteps, the "isolate" action must be taken *at each* timestep! (In this case there is no difference as there are only two actions possible, but in principle this should be the behaviour)
+        
         #---Step evolution---#        
         num_connections = 0
         for node in self.g:
@@ -228,12 +193,18 @@ class Simulation:
             num_connections += len(node.getConnections()) 
         num_connections /= 2 #Undirected graph
         
+        #---Cost function (=-fitness)---#
         return num_infected**2 + max((self.num_edges - num_connections - self.removable_edges),0) #Return metrics to minimize
     
     def reset(self):
+        """Reset the graph to the initial state"""
+        
         self.g = deepcopy(self.checkpoint)
         
     def eval_genome(self, genome, net_config):
+        """Generate a RNN for each node according to @genome and @neat_config.
+        Simulate the systems according to the provided configuration, and return the fitness of that genome."""
+        
         runs_metrics = []
             
         for i in range(self.runs_per_net):
@@ -242,37 +213,37 @@ class Simulation:
             #Create a network for each node
             nets = [neat.nn.RecurrentNetwork.create(genome, net_config) for n in range(self.N)]
             
-            metric_to_minimize = 0
+            metric_to_minimize = 0 #Cost
             
             for t in range(self.max_steps_per_run):
-                metric_to_minimize += self.step_sim(nets)
+                metric_to_minimize += self.step_sim(nets) #Accumulate cost
                 
             runs_metrics.append(metric_to_minimize)
                    
         return -max(runs_metrics) 
         
     def eval_genomes(self, genomes, net_config):
+        """Evaluates a list of genomes"""
+        
         for genome_id, genome in genomes:                   
             genome.fitness = self.eval_genome(genome, net_config)
 
 if __name__ == "__main__":
+    
+    #Create graph
     gen = GraphFactory.make_graph("PreferentialAttachment")
     g = gen(30, .5, seed=42, nodetype=GeneticNode) #Starting graph
     
     #Add some infected
     g.getVertex(0).setState(Epidemic.State.INFECTED)
     
-    #TODO Steps before
-    #Step for 3 days
+    #Advance epidemic for 2 days before letting the algorithm intervene.
     np.random.seed(42)
     for i in range(2):
         for node in g:
             node.step()
     
-    # g.plot()
-    
-    # input("Test")
-    
+    #Load NEAT configuration
     local_dir = os.path.dirname(__file__)
     config_path = os.path.join(local_dir, 'config_neat')
     neat_config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
@@ -283,40 +254,44 @@ if __name__ == "__main__":
     
     p.add_reporter(neat.StdOutReporter(True))
     
-    # pyqt = PyQtReporter()
+    # pyqt = PyQtReporter() # Add live plot of fitness. Note that this (for some reason) produces an error when trying to save the final model. So only uncomment these lines during testing!
     # p.add_reporter(pyqt)
     
+    #Create interface with graph
     sim = Simulation(g)
+    
+    #Evaluate for 100 epochs
     pe = neat.ParallelEvaluator(multiprocessing.cpu_count(), sim.eval_genome)
-    winner = p.run(pe.evaluate, 100)
+    winner = p.run(pe.evaluate, 10)
     
-    #winner = p.run(sim.eval_genomes, 100)
-    
-    #Save the results
+    #Save the results #Comment these lines when using the pyqtreporter!
     save_object(winner, "WinnerParams")
     save_object(neat_config, "NeatConfig")
     save_object(g, "OriginalGraph")
     
-    #---Simulation---#
+    #---Show the resulting behaviour---#
     N = g.numVertices
     winner_nets = [neat.nn.RecurrentNetwork.create(winner, neat_config)
                    for i in range(N)]
     
-    sim.reset()
-    
+    sim.reset() #Reset sim
     sim.g.plot()
-    def update():
+    
+    def update(): #Step the simulation
         sim.step_sim(winner_nets)
         sim.g.plot()
 
+    #Calls update() every 500ms to update the graph
     timer = QtCore.QTimer()
     timer.timeout.connect(update)
-    timer.start(1000)
+    timer.start(500)
     
+    #Print final results
     print('\nBest genome:\n{!s}'.format(winner))
     
-    input("Press Enter to continue...")
-    pyqt.proc.close()
+    input("Press Enter to exit...")
+    
+    # pyqt.proc.close() # Uncomment if pyqtreporter is used
     
     
     

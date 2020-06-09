@@ -20,24 +20,25 @@ def load_object(filename):
         obj = pickle.load(f)
         return obj
 
+#Use this file to visualize / generate plots of pre-trained networks
 if __name__ == "__main__":
     # gen = GraphFactory.make_graph("PreferentialAttachment")
-    # g = gen(100, .5, seed=42, nodetype=Genetic.GeneticNode) #Starting graph
+    # g = gen(100, .5, seed=42, nodetype=Genetic.GeneticNode) 
     
+    # Create Graph
     gen = GraphFactory.make_graph("KarateClub") #graph from real data
     g = gen(nodetype=Genetic.GeneticNode)
     
     #Add some infected
     g.getVertex(0).setState(Epidemic.State.INFECTED)
     
-    #TODO Steps before
-    #Step for 3 days
+    #Advance epidemic for 3 days without action (to introduce more exposed)
     np.random.seed(42)
     for i in range(3):
         for node in g:
             node.step()
     
-    
+    #Load pre-trained network
     neat_config = load_object("NeatConfig")
     winner = load_object("WinnerParams")
     

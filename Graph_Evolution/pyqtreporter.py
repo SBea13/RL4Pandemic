@@ -6,6 +6,8 @@ import pyqtgraph.multiprocess as mp
 import copy
 
 #Reporting class
+#Taken from: https://neat-python.readthedocs.io/en/latest/_modules/statistics.html#StatisticsReporter
+#And modified to show a live plot during genetic training, both of fitness and species
 class PyQtReporter(BaseReporter):
     """
     Gathers (via the reporting interface) and provides (to callers and/or a file)

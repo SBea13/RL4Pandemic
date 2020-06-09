@@ -1,27 +1,28 @@
+from Graph import Graph, SimpleNode
 import numpy as np
-from Graph import Graph
-from Graph import SimpleNode
-import configparser
 import networkx as nx
 import scipy as sp
 
-
-_graph_types = []
+_graph_types = [] #Store all implemented graph types
 
 def graph_type(cls):
     _graph_types.append(cls)
     return cls
 
 def make_graph(type):
+    """Return the class responsible for creating a graph of type @type (string)."""
+    
     for gt in _graph_types:
         if gt._name == type:
             return gt
+        
     raise NotImplementedError('Graphs of type "{}" are not implemented'.format(type))
     
 
 @graph_type
 class ErdosRenyiGraph(Graph):
-    """Constructs a Erdos Renyi Graph (aka binomial graph). @N nodes (each at a random position x, y in [-@L,@L]) are connected by edges, so that any given pair of nodes is connected with a probability @p
+    """Constructs a Erdos Renyi Graph (aka binomial graph).
+    @N nodes (each at a random position x, y in [-@L,@L]) are connected by edges, so that any given pair of nodes is connected with a probability @p
     """
     
     _name = "ErdosRenyi"
@@ -81,35 +82,35 @@ class GnmGraph(Graph):
 @graph_type
 class PreferentialAttachment(Graph):
     """
-    Grow a graph from a small Erdos-Renyii Graph by adding nodes, each connected to other nodes with a probability proportional to the target's degree. So, nodes with many connections tend to "receive" more connections (Barabasi-Albert model).
+    Grow a (undirected) graph from a small Erdos-Renyii Graph by adding nodes, each connected to other nodes with a probability proportional to the target's degree (and random weights). So, nodes with many connections tend to "receive" more connections (Barabasi-Albert model).
     """
     
     _name = "PreferentialAttachment"
     
     def __init__(self, N, p, nstart=10, m=3, seed=None, nodetype=SimpleNode, L=5):
-        """[summary]
+        """Builds the graph.
 
         Parameters
         ----------
-        N : [type]
-            [description]
-        p : [type]
-            [description]
+        N : int
+            Number of nodes, must be > nstart
+        p : float
+            Probability of connections for the original nstart nodes
         nstart : int, optional
-            [description], by default 10
+            Number of starting nodes (before preferential attachment growth), by default 10
         m : int, optional
-            minimum number of connections for new nodes, by default 3
-        seed : [type], optional
-            [description], by default None
-        nodetype : [type], optional
-            [description], by default SimpleNode
+            Minimum number of connections for new nodes, by default 3
+        seed : int, optional
+            Seed for the random number generator, by default None
+        nodetype : SimpleNode or derived class, optional
+            Class used for creating nodes in the graph, by default SimpleNode
         L : int, optional
-            [description], by default 5
+            Nodes are placed at random in a [-L, L] square grid, by default 5
 
         Raises
         ------
         ValueError
-            [description]
+            If N <= nstart
         """
         
         if (N <= nstart):
@@ -117,48 +118,38 @@ class PreferentialAttachment(Graph):
             
         positions = np.random.uniform(-L, L, size=(N,2))
         
-        graph = nx.erdos_renyi_graph(nstart, p, seed=seed, directed=False)
+        graph = nx.erdos_renyi_graph(nstart, p, seed=seed, directed=False) #Starting "core" graph
+        
         adj = nx.adjacency_matrix(graph).todense()
         
-        weights = np.random.uniform(0, 1, size=(nstart,nstart))
-        weights = np.tril(weights) + np.tril(weights, -1).T
+        weights = np.random.uniform(0, 1, size=(nstart,nstart)) #Randomize weights
+        weights = np.tril(weights) + np.tril(weights, -1).T #Keeps adjacency matrix symmetric (undirected graph)
         
         adj = np.multiply(adj, weights)
         
         super().__init__(adj, positions[:nstart], node_type=nodetype)
         
+        #Grow the graph with preferential attachment
         for i in range(nstart, N-nstart):
-            #Compute probabilities of connections
+            #Compute probabilities of connections (proportional to node degrees)
             id_probas = np.array([[node.id, node.degree] for node in list(self.vertList.values())])
             
             probas = id_probas[:,1] / np.sum(id_probas[:,1])
-            cum_probas = np.cumsum(probas)
+            toNodes = np.random.choice(id_probas[:,0], size=m, replace=False, p=probas)        
+                
+            fromNode = self.addVertex(i, positions[i]) #Create a new node
             
-            toNodes = np.random.choice(id_probas[:,0], size=m, replace=False, p=probas)            
-               
-            fromNode = self.addVertex(i, positions[i])
+            weights = np.random.uniform(0, 1, size=m)  #Randomize weights of connections
             
-            weights = np.random.uniform(0, 1, size=m)
-            
-            print(probas)
-            print(toNodes)
+            #Add connections
             for j, to in enumerate(toNodes):
-                print(fromNode)
                 self.addEdge(fromNode.id, to, weight=weights[j])
                 self.addEdge(to, fromNode.id, weight=weights[j])
-                print(self.getVertex(to))
 
-
-    
-config = configparser.ConfigParser()
-config_rtn = config.read('parameters.txt')
-config = config["DEFAULT"]
-
-if config_rtn == []:
-    raise ValueError("Missing configuration")
 
 if __name__ == "__main__":
-
+    #Create a graph and plot it 
+    
     gen = make_graph("PreferentialAttachment")
     g = gen(30, p=.5, seed = 42)
     g.plot(nodeSize=.5)

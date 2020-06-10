@@ -130,7 +130,7 @@ class PreferentialAttachment(Graph):
         super().__init__(adj, positions[:nstart], node_type=nodetype)
         
         #Grow the graph with preferential attachment
-        for i in range(nstart, N-nstart):
+        for i in range(nstart, N):
             #Compute probabilities of connections (proportional to node degrees)
             id_probas = np.array([[node.id, node.degree] for node in list(self.vertList.values())])
             
